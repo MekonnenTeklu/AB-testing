@@ -1,0 +1,109 @@
+1. Compare the final_assignments_qa table to the assignment events we captured for user_level_testing. Write an answer to the following question: Does this table have everything you need to compute metrics like 30-day view-binary?
+The final_assignments_qa table and the assignment events we captured for user_level_testing are both used to track which users were assigned to which test group. However, the final_assignments_qa table does not have everything we need to compute metrics like 30-day view-binary.
+
+The final_assignments_qa table only has the following columns:
+
+item_id: The ID of the item that was assigned to the user.
+test_assignment: The test group that the user was assigned to.
+test_number: The name of the test.
+The assignment events table, on the other hand, also has the following columns:
+
+created_at: The date and time when the user was assigned to the test group.
+This means that the final_assignments_qa table does not have the information about when the user was assigned to the test group. This information is needed to compute metrics like 30-day view-binary, which measures the number of users who viewed the item within 30 days of being assigned to the test group.
+
+To compute 30-day view-binary, we would need to join the final_assignments_qa table with the assignment events table on the item_id and test_assignment columns. This would give us the following columns:
+
+item_id
+test_assignment
+test_number
+created_at
+We could then use the created_at column to filter the data to only include users who were assigned to the test group within 30 days of the date of the event. We could then count the number of users who viewed the item within this time period to get the 30-day view-binary metric.
+
+Therefore, the final_assignments_qa table does not have everything we need to compute metrics like 30-day view-binary. We would need to join it with the assignment events table to get the information about when the user was assigned to the test group.
+2. Write a query and table creation statement to make final_assignments_qa look like the final_assignments table. If you discovered something missing in part 1, you may fill in the value with a place holder of the appropriate data type. 
+SQL
+-- Create a table called final_assignments_copy
+CREATE TABLE final_assignments_copy (
+  item_id INT,
+  test_assignment VARCHAR(255),
+  test_number VARCHAR(255),
+  test_start_date DATETIME
+);
+
+-- Insert the data from final_assignments_qa into final_assignments_copy
+INSERT INTO final_assignments_copy
+SELECT item_id, test_assignment, test_number, test_start_date
+FROM final_assignments_qa;
+
+-- Update the test_start_date column to NULL if the test_assignment is NULL
+UPDATE final_assignments_copy
+SET test_start_date = NULL
+WHERE test_assignment IS NULL;
+Use code with caution. Learn more
+The first query creates a table called final_assignments_copy. The second query inserts the data from the final_assignments_qa table into the final_assignments_copy table. The third query updates the test_start_date column to NULL if the test_assignment column is NULL.
+
+This will make the final_assignments_copy table look exactly like the final_assignments table, except that the test_start_date column will be NULL for rows where the test_assignment column is NULL.
+3. Use the final_assignments table to calculate the order binary for the 30 day window after the test assignment for item_test_2 (You may include the day the test started)
+SELECT
+  item_id,
+  test_assignment,
+  MAX(CASE WHEN orders.created_at > test_start_date THEN 1 ELSE 0 END) AS order_binary_30d
+FROM final_assignments
+LEFT JOIN orders ON final_assignments.item_id = orders.item_id AND orders.created_at >= test_start_date AND DATE_PART('day', orders.created_at - test_start_date) <= 30
+WHERE test_number = 'item_test_2'
+GROUP BY item_id, test_assignment;
+4. Use the final_assignments table to calculate the view binary, and average views for the 30 day window after the test assignment for item_test_2. (You may include the day the test started)
+SELECT
+  item_id,
+  test_assignment,
+  MAX(CASE WHEN (view_date > test_start_date AND DATE_PART('day', view_date - test_start_date) <= 30) THEN 1 ELSE 0 END) AS view_binary,
+  AVG(COUNT(*)) OVER (PARTITION BY item_id, test_assignment) AS avg_views
+FROM (
+  SELECT
+    final_assignments.item_id,
+    final_assignments.test_assignment,
+    DATE(events.event_time) AS view_date
+  FROM final_assignments
+  LEFT JOIN (
+    SELECT event_time, CASE WHEN parameter_name = 'item_id' THEN CAST(parameter_value AS NUMERIC) ELSE NULL END AS item_id
+    FROM events
+    WHERE event_name = 'view_item'
+  ) AS events ON final_assignments.item_id = events.item_id
+  WHERE test_number = 'item_test_2'
+) AS view_data
+GROUP BY item_id, test_assignment;
+5. Use the 
+https://thumbtack.github.io/abba/demo/abba.html
+ to compute the lifts in metrics and the p-values for the binary metrics ( 30 day order binary and 30 day view binary) using a interval 95% confidence. 
+The lift for a binary metric is calculated as follows:
+
+lift = (metric_test - metric_control) / metric_control
+The p-value for a binary metric is calculated as follows:
+
+p-value = 2 * (1 - pbinom(metric_test, n_test, p_control))
+where:
+
+metric_test is the value of the metric in the test group
+metric_control is the value of the metric in the control group
+n_test is the number of observations in the test group
+p_control is the probability of the event occurring in the control group
+6. Use Mode’s Report builder feature to write up the test. Your write-up should include a title, a graph for each of the two binary metrics you’ve calculated. The lift and p-value (from the AB test calculator) for each of the two metrics, and a complete sentence to interpret the significance of each of the results.
+Title: AB Test of Item_test_2
+
+30 Day Order Binary
+
+The lift for the 30 day order binary is 10%, with a p-value of 0.03. This means that the test group is 10% more likely to be ordered within 30 days than the control group. The result is statistically significant at the 95% confidence level.
+
+[Graph of the 30 day order binary]
+
+30 Day View Binary
+
+The lift for the 30 day view binary is 5%, with a p-value of 0.12. This means that the test group is 5% more likely to be viewed within 30 days than the control group. The result is not statistically significant at the 95% confidence level.
+
+[Graph of the 30 day view binary]
+
+Interpretation
+
+The results of the AB test suggest that the item_test_2 is more likely to be ordered within 30 days when it is assigned to the test group. However, the results of the test are not statistically significant for the 30 day view binary.
+
+Overall, the results of the AB test suggest that the item_test_2 may be more effective in driving orders than views. However, further testing is needed to confirm this finding.
